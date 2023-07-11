@@ -26,7 +26,7 @@ NP_SAMTOOLS_INDEX_IN=${RODDY_SCRATCH}/np_samtools_index_in
 MBUF_SMALL="${MBUFFER_BINARY} -m ${MBUFFER_SIZE_SMALL} -q -l /dev/null"
 MBUF_LARGE="${MBUFFER_BINARY} -m ${MBUFFER_SIZE_LARGE} -q -l /dev/null"
 
-mkfifo ${NP_READBINS_IN} ${NP_COVERAGEQC_IN} ${NP_COMBINEDANALYSIS_IN} ${NP_FLAGSTATS}
+touch ${NP_READBINS_IN} ${NP_COVERAGEQC_IN} ${NP_COMBINEDANALYSIS_IN} ${NP_FLAGSTATS}
 
 bamname="$(basename "$FILENAME_SORTED_BAM")"
 INDEX_FILE=${FILENAME_SORTED_BAM}.bai
@@ -44,7 +44,7 @@ RAW_SEQ=${RAW_SEQ_1}
 source ${TOOL_COMMON_ALIGNMENT_SETTINGS_SCRIPT}
 
 NP_BAMSORT=${RODDY_SCRATCH}/NAMED_PIPE_BAMSORT
-mkfifo ${NP_BAMSORT}
+touch ${NP_BAMSORT}
 
 # Create the following variable for error checking issues
 TMP_FILE=${tempSortedBamFile}
@@ -71,7 +71,7 @@ useAdaptorTrimming=${useAdaptorTrimming-false}
 
 if [[ ${bamFileExists} == false ]]	# we have to make the BAM
 then
-	mkfifo ${FNPIPE1} ${FNPIPE2}
+	touch ${FNPIPE1} ${FNPIPE2}
 	if [[ ${useAdaptorTrimming} == true ]]
 	then
 		if [ "${qualityScore}" = "illumina" ]
@@ -120,19 +120,6 @@ else
     true & procTrim=$!
 fi
 
-# Try to read from pipes BEFORE they are filled.
-# in all cases:
-# SAM output is piped to perl script that calculates various QC measures
-(${PERL_BINARY} ${TOOL_COMBINED_BAM_ANALYSIS} -i ${NP_COMBINEDANALYSIS_IN} -a ${FILENAME_DIFFCHROM_MATRIX}.tmp -c ${CHROM_SIZES_FILE} -b ${FILENAME_ISIZES_MATRIX}.tmp  -f ${FILENAME_EXTENDED_FLAGSTATS}.tmp  -m ${FILENAME_ISIZES_STATISTICS}.tmp -o ${FILENAME_DIFFCHROM_STATISTICS}.tmp -p ${INSERT_SIZE_LIMIT} ) & procIDCBA=$!
-
-# genome coverage (depth of coverage and other QC measures in one file)
-(${TOOL_COVERAGE_QC_D_IMPL} --alignmentFile=${NP_COVERAGEQC_IN} --outputFile=${FILENAME_GENOME_COVERAGE}.tmp --processors=1 --basequalCutoff=${BASE_QUALITY_CUTOFF} --ungappedSizes=${CHROM_SIZES_FILE}) & procIDGenomeCoverage=$!
-
-# read bins
-(set -o pipefail; ${TOOL_GENOME_COVERAGE_D_IMPL} --alignmentFile=${NP_READBINS_IN} --outputFile=/dev/stdout --processors=4 --mode=countReads --windowSize=${WINDOW_SIZE} | $MBUF_SMALL | ${PERL_BINARY} ${TOOL_FILTER_READ_BINS} - ${CHROM_SIZES_FILE} > ${FILENAME_READBINS_COVERAGE}.tmp) & procIDReadbinsCoverage=$!
-
-# use sambamba for flagstats
-${SAMBAMBA_FLAGSTATS_BINARY} flagstat -t 1 "$NP_FLAGSTATS" > "$tempFlagstatsFile" & procIDFlagstat=$!
 
 # Set a path prefix for HLA FASTQ files. Only used if runBwaPostAltJs==true.
 hlaPrefix=""
@@ -147,7 +134,7 @@ then
 		throw 50 "bwa-postalt.js script needs name-sorted input. Cannot run on existing (position sorted) BAM."
 	fi
 	# make all the pipes
-	(cat ${FILENAME_SORTED_BAM} | ${MBUF_LARGE} | tee ${NP_COVERAGEQC_IN} ${NP_READBINS_IN} ${NP_FLAGSTATS} | ${SAMBAMBA_BINARY} view /dev/stdin | ${MBUF_LARGE} > $NP_COMBINEDANALYSIS_IN) & procIDOutPipe=$!
+	(cat ${FILENAME_SORTED_BAM} | ${MBUF_LARGE} | tee ${NP_COVERAGEQC_IN} ${NP_READBINS_IN} ${NP_FLAGSTATS} | ${SAMBAMBA_BINARY} view /dev/stdin | ${MBUF_LARGE} > $NP_COMBINEDANALYSIS_IN)
 else
 	if [[ "$ON_CONVEY" == true ]]
 	then	# we have to use sambamba and cannot make an index (because sambamba does not work with a pipe)
@@ -158,28 +145,28 @@ else
 		${SAMBAMBA_BINARY} view -f bam -S -l 0 -t 8 /dev/stdin | $MBUF_LARGE | \
 		tee ${NP_FLAGSTATS} | \
 		${SAMBAMBA_BINARY} sort --tmpdir=${RODDY_SCRATCH} -l 9 -t ${CONVEY_SAMBAMBA_SAMSORT_THREADS} -m ${CONVEY_SAMBAMBA_SAMSORT_MEMSIZE} /dev/stdin -o /dev/stdout 2> $FILENAME_SORT_LOG | \
-		tee ${NP_COVERAGEQC_IN} ${NP_READBINS_IN} > $tempSortedBamFile; echo $? > ${DIR_TEMP}/${bamname}_ec) & procID_MEMSORT=$!
+		tee ${NP_COVERAGEQC_IN} ${NP_READBINS_IN} > $tempSortedBamFile; echo $? > ${DIR_TEMP}/${bamname}_ec) 
 
-		wait $procID_MEMSORT; [[ ! `cat ${DIR_TEMP}/${bamname}_ec` -eq "0" ]] && echo "bwa mem - sambamba pipe returned a non-zero exit code and the job will die now." && exit 100
+		[[ ! `cat ${DIR_TEMP}/${bamname}_ec` -eq "0" ]] && echo "bwa mem - sambamba pipe returned a non-zero exit code and the job will die now." && exit 100
 
 	elif [[ ${useBioBamBamSort} == false ]]
 	then	# we use samtools for making the index
 	    NP_SORT_ERRLOG="$RODDY_SCRATCH/NP_SORT_ERRLOG"
-		mkfifo $NP_SORT_ERRLOG ${NP_SAMTOOLS_INDEX_IN}
-		${SAMTOOLS_BINARY} index ${NP_SAMTOOLS_INDEX_IN} ${tempBamIndexFile} & procID_IDX=$!
+		touch $NP_SORT_ERRLOG ${NP_SAMTOOLS_INDEX_IN}
+		
 		(set -o pipefail; ${BWA_BINARY} mem -t ${BWA_MEM_THREADS} -R "@RG\tID:${ID}\tSM:${SM}\tLB:${LB}\tPL:ILLUMINA" $BWA_MEM_OPTIONS ${INDEX_PREFIX} ${INPUT_PIPES} 2> $FILENAME_BWA_LOG | $MBUF_LARGE | \
 		optionalBwaPostAltJs "$hlaPrefix" "$bwaPostAltJsMinPaRatio" | tee $NP_COMBINEDANALYSIS_IN | \
 		${SAMTOOLS_BINARY} view -uSbh - | $MBUF_LARGE | \
 		${SAMTOOLS_BINARY} sort -@ 8 -m ${SAMPESORT_MEMSIZE} -o - ${tempFileForSort} 2>$NP_SORT_ERRLOG | \
-		tee ${NP_COVERAGEQC_IN} ${NP_READBINS_IN} ${NP_FLAGSTATS} ${NP_SAMTOOLS_INDEX_IN} > ${tempSortedBamFile}; echo $? > ${DIR_TEMP}/${bamname}_ec) & procID_MEMSORT=$!
+		tee ${NP_COVERAGEQC_IN} ${NP_READBINS_IN} ${NP_FLAGSTATS} ${NP_SAMTOOLS_INDEX_IN} > ${tempSortedBamFile}; echo $? > ${DIR_TEMP}/${bamname}_ec) 
 		# filter samtools error log
-		(cat $NP_SORT_ERRLOG | uniq > $FILENAME_SORT_LOG) & procID_logwrite=$!
-		wait $procID_logwrite	# do we need a check for it?
-		wait $procID_MEMSORT; [[ ! `cat ${DIR_TEMP}/${bamname}_ec` -eq "0" ]] && echo "bwa mem - samtools pipe returned a non-zero exit code and the job will die now." && exit 100
-		wait $procID_IDX; [[ ! $? -eq 0 ]] && echo "Error from samtools index" && exit 10
+		(cat $NP_SORT_ERRLOG | uniq > $FILENAME_SORT_LOG)
+		${SAMTOOLS_BINARY} index ${NP_SAMTOOLS_INDEX_IN} ${tempBamIndexFile}
+		[[ ! `cat ${DIR_TEMP}/${bamname}_ec` -eq "0" ]] && echo "bwa mem - samtools pipe returned a non-zero exit code and the job will die now." && exit 100
+		[[ ! -f ${tempBamIndexFile}  ]] && echo "Error from samtools index" && exit 10
 
 	else	# biobambam makes the index
-		(cat ${NP_BAMSORT} | tee ${NP_COVERAGEQC_IN} ${NP_READBINS_IN} ${NP_FLAGSTATS} > ${tempSortedBamFile}) & procIDview=$!
+		(cat ${NP_BAMSORT} | tee ${NP_COVERAGEQC_IN} ${NP_READBINS_IN} ${NP_FLAGSTATS} > ${tempSortedBamFile})
 		# Output sam to separate named pipe
 		# Rewrite to a bamfile
 		(set -o pipefail; ${BWA_BINARY} mem -t ${BWA_MEM_THREADS} -R "@RG\tID:${ID}\tSM:${SM}\tLB:${LB}\tPL:ILLUMINA" $BWA_MEM_OPTIONS ${INDEX_PREFIX} ${INPUT_PIPES} 2> $FILENAME_BWA_LOG | $MBUF_LARGE | \
@@ -187,16 +174,31 @@ else
 		${SAMTOOLS_BINARY} view -uSbh - | $MBUF_LARGE | \
 		${BAMSORT_BINARY} O=${NP_BAMSORT} level=1 inputthreads=2 outputthreads=2 \
 		index=1 indexfilename=${tempBamIndexFile} calmdnm=1 calmdnmrecompindetonly=1 calmdnmreference=${INDEX_PREFIX} \
-		tmpfile=${tempFileForSort} 2> $FILENAME_SORT_LOG; echo $? > ${DIR_TEMP}/ec_bbam) & procIDBamsort=$!
-		wait $procIDBamsort; [[ $? -gt 0 ]] && echo "Error from bamsort binary" && exit 11
-		wait $procIDview; [[ $? -gt 0 ]] && echo "Error from cat from bamsort output for pipes" && exit 12
+		tmpfile=${tempFileForSort} 2> $FILENAME_SORT_LOG; echo $? > ${DIR_TEMP}/ec_bbam)
+		[[ $? -gt 0 ]] && echo "Error from bamsort binary" && exit 11
+		[[ $? -gt 0 ]] && echo "Error from cat from bamsort output for pipes" && exit 12
 	fi
 fi
 
-if [[ ${bamFileExists} == true ]]
+
+# use sambamba for flagstats
+${SAMBAMBA_FLAGSTATS_BINARY} flagstat -t 1 "$NP_FLAGSTATS" > "$tempFlagstatsFile"
+
+# genome coverage (depth of coverage and other QC measures in one file)
+(${TOOL_COVERAGE_QC_D_IMPL} --alignmentFile=${NP_COVERAGEQC_IN} --outputFile=${FILENAME_GENOME_COVERAGE}.tmp --processors=1 --basequalCutoff=${BASE_QUALITY_CUTOFF} --ungappedSizes=${CHROM_SIZES_FILE})
+
+# SAM output is piped to perl script that calculates various QC measures
+(${PERL_BINARY} ${TOOL_COMBINED_BAM_ANALYSIS} -i ${NP_COMBINEDANALYSIS_IN} -a ${FILENAME_DIFFCHROM_MATRIX}.tmp -c ${CHROM_SIZES_FILE} -b ${FILENAME_ISIZES_MATRIX}.tmp  -f ${FILENAME_EXTENDED_FLAGSTATS}.tmp  -m ${FILENAME_ISIZES_STATISTICS}.tmp -o ${FILENAME_DIFFCHROM_STATISTICS}.tmp -p ${INSERT_SIZE_LIMIT} )
+
+# read bins
+(set -o pipefail; ${TOOL_GENOME_COVERAGE_D_IMPL} --alignmentFile=${NP_READBINS_IN} --outputFile=genomeCoverage.txt --processors=4 --mode=countReads --windowSize=${WINDOW_SIZE} )
+( ${PERL_BINARY} ${TOOL_FILTER_READ_BINS} genomeCoverage.txt ${CHROM_SIZES_FILE} > ${FILENAME_READBINS_COVERAGE}.tmp)
+
+
+
+
+if [[ ${bamFileExists} == false ]]
 then
-	wait $procIDOutPipe; [[ $? -gt 0 ]] && echo "Error from sambamba view pipe" && exit 13
-else	# make sure to rename BAM file when it has been produced correctly
 	[[ -p $i1 ]] && rm $i1 $i2 $o1 $o2 2> /dev/null
 	rm $FNPIPE1
 	rm $FNPIPE2
@@ -212,12 +214,6 @@ else	# make sure to rename BAM file when it has been produced correctly
 	[[ -p $i1 ]] && rm $i1 $i2 $o1 $o2 2> /dev/null
 	
 fi
-
-wait $procTrim || throw 38 "Error from trimming"
-wait $procIDFlagstat; [[ $? -gt 0 ]] && echo "Error from sambamba flagstats" && exit 14
-wait $procIDReadbinsCoverage; [[ $? -gt 0 ]] && echo "Error from genomeCoverage read bins" && exit 15
-wait $procIDGenomeCoverage; [[ $? -gt 0 ]] && echo "Error from coverageQCD" && exit 16
-wait $procIDCBA; [[ $? -gt 0 ]] && echo "Error from combined QC perl script" && exit 17
 
 # rename QC files
 mv ${FILENAME_DIFFCHROM_MATRIX}.tmp ${FILENAME_DIFFCHROM_MATRIX} || throw 28 "Could not move file"
