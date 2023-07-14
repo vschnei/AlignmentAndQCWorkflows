@@ -120,6 +120,7 @@ else
     true & procTrim=$!
 fi
 
+wait $procTrim
 
 # Set a path prefix for HLA FASTQ files. Only used if runBwaPostAltJs==true.
 hlaPrefix=""
