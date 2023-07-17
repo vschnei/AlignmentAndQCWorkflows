@@ -167,33 +167,36 @@ elif markWithSambamba; then
     	(${SAMBAMBA_MARKDUP_BINARY} markdup $SAMBAMBA_MARKDUP_OPTS --tmpdir="$RODDY_BIG_SCRATCH" ${INPUT_FILES[@]} "$NP_PIC_OUT"; \
 	        echo $? > "$returnCodeMarkDuplicatesFile") 
 
-    	# Compress with uncompressed BAM stream with multiple cores.
-    	${SAMTOOLS_BINARY} view -S -b -@ 6 "$NP_BAM_COMPRESS_IN" \
-    	    | mbuf 100m \
-    	        -f -o "$NP_INDEX_IN" \
-    	        -f -o "$tempBamFile" \
-    	        -f -o "$NP_MD5_IN" 
-
-    	fakeDupMarkMetrics "$NP_METRICS_IN" "$tempFilenameMetrics"
-                
-    	md5File "$NP_MD5_IN" "$tempMd5File"
 
         # The tee-like mbuffer decouples the IO in the output stream. -f forces writing into existing FIFO file.
 
-        # Sambamba outputs uncompressed BAM, so convert to SAM make a SAM pipe for the Perl tools.
-	    ${SAMTOOLS_BINARY} view -h "$NP_SAM_IN" \
-    	    | mbuf 100m \
-      	        -f -o "$NP_METRICS_IN" \
-    	        -f -o "$NP_COMBINEDANALYSIS_IN" \
-    	        -f -o "$NP_BAM_COMPRESS_IN" 
-
     	# Create BAM pipes for samtools index, flagstat and the two D tools, write BAM.
 	    cat "$NP_PIC_OUT" \
-    	    | mbuf 100m \
+    	    | mbuf 2g \
     	        -f -o "$NP_SAM_IN" \
     	        -f -o "$NP_FLAGSTATS_IN" \
     	        -f -o "$NP_COVERAGEQC_IN" \
     	        -f -o "$NP_READBINS_IN" 
+                
+        # Sambamba outputs uncompressed BAM, so convert to SAM make a SAM pipe for the Perl tools.
+	    ${SAMTOOLS_BINARY} view -h "$NP_SAM_IN" \
+    	    | mbuf 2g \
+      	        -f -o "$NP_METRICS_IN" \
+    	        -f -o "$NP_COMBINEDANALYSIS_IN" \
+    	        -f -o "$NP_BAM_COMPRESS_IN" 
+
+       	fakeDupMarkMetrics "$NP_METRICS_IN" "$tempFilenameMetrics"
+
+    	# Compress with uncompressed BAM stream with multiple cores.
+    	${SAMTOOLS_BINARY} view -S -b -@ 6 "$NP_BAM_COMPRESS_IN" \
+    	    | mbuf 2g \
+    	        -f -o "$NP_INDEX_IN" \
+    	        -f -o "$tempBamFile" \
+    	        -f -o "$NP_MD5_IN" 
+
+               
+    	md5File "$NP_MD5_IN" "$tempMd5File"
+
 
 	else
 	    # The BAM file exists.
