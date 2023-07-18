@@ -132,6 +132,9 @@ if markWithPicard || [[ "$mergeOnly" == true ]]; then
             MAX_RECORDS_IN_RAM=12500000; \
             echo $? > ${returnCodeMarkDuplicatesFile})
 
+        # provide named pipes of SAM type
+        (cat ${NP_PIC_OUT} | mbuf 2g | tee ${NP_SAM_IN} ${NP_COMBINEDANALYSIS_IN} > /dev/null) 
+
         md5File "$NP_MD5_IN" "$tempMd5File" 
 
         # convert SAM to BAM
@@ -152,9 +155,6 @@ if markWithPicard || [[ "$mergeOnly" == true ]]; then
     # index piped BAM (always done)
     (${SAMTOOLS_BINARY} index ${NP_INDEX_IN} $tempIndexFile) 
     
-    # provide named pipes of SAM type
-    (cat ${NP_PIC_OUT} | mbuf 2g | tee ${NP_SAM_IN} ${NP_COMBINEDANALYSIS_IN} > /dev/null) 
-
 
 elif markWithSambamba; then
     ## Modified copy from /home/hutter/workspace_ngs/ngs2/trunk/pipelines/RoddyWorkflows/Plugins/QualityControlWorkflows/resources/analysisTools/qcPipeline/mergeAndMarkOrRemoveDuplicatesSlim.sh
@@ -362,3 +362,4 @@ grep -w "NA" $FILENAME_DIFFCHROM_STATISTICS && useSingleEndProcessing=true
 ${RSCRIPT_BINARY} ${TOOL_INSERT_SIZE_PLOT_SCRIPT} ${FILENAME_ISIZES_MATRIX} ${FILENAME_ISIZES_STATISTICS} ${FILENAME_ISIZES_PLOT}_temp "PE insertsize of ${bamname} (rmdup)" && mv  ${FILENAME_ISIZES_PLOT}_temp ${FILENAME_ISIZES_PLOT} || throw 22 "Error from insert sizes plotter"
 ${RSCRIPT_BINARY} ${TOOL_PLOT_DIFFCHROM} -i "$FILENAME_DIFFCHROM_MATRIX" -s "$FILENAME_DIFFCHROM_STATISTICS" -o "${FILENAME_DIFFCHROM_PLOT}_temp" && mv  ${FILENAME_DIFFCHROM_PLOT}_temp ${FILENAME_DIFFCHROM_PLOT} || throw 23 "Error from chrom_diff.r"
 
+rm ${NP_PIC_OUT} ${NP_SAM_IN} ${NP_INDEX_IN} ${NP_FLAGSTATS_IN} ${NP_READBINS_IN} ${NP_COVERAGEQC_IN} ${NP_COMBINEDANALYSIS_IN} ${NP_MD5_IN} ${NP_METRICS_IN} ${NP_BAM_COMPRESS_IN}
